@@ -1,0 +1,322 @@
+# ALY 6050
+
+# Module 3 Project - Forecasting Financial Time Series
+
+# Thuy Nhu Thao Tran
+
+```{r}
+# Load the Required Libraries and Data
+# Load necessary libraries
+library(readxl)      
+library(forecast)    
+library(ggplot2)     
+library(zoo)         
+
+# Load the data from the Excel file
+data <- read_excel("ALY6050_Module3Project_Data.xlsx", sheet = "6050_Module3Project_Data")
+
+# Check for missing values in the dataset
+colSums(is.na(data))
+
+# Remove rows with missing values
+data_clean <- na.omit(data)
+
+# Verify that missing values are removed
+colSums(is.na(data_clean))
+
+# Extract cleaned AAPL and HON data
+aapl_data_clean <- data_clean$`AAPL (Apple Inc) / $`
+hon_data_clean <- data_clean$`HON (Honeywell Inc)  /  $`
+
+```
+
+# Part 1: Short-term Forecasting
+
+# 1.1 Time Series Plots
+
+```{r}
+# Plot AAPL stock prices
+ggplot(data_clean, aes(x = Period, y = `AAPL (Apple Inc) / $`)) +
+  geom_line(color = "blue") +
+  labs(title = "AAPL Stock Prices Over Time", x = "Period", y = "Price ($)")
+
+# Plot HON stock prices
+ggplot(data_clean, aes(x = Period, y = `HON (Honeywell Inc)  /  $`)) +
+  geom_line(color = "red") +
+  labs(title = "HON Stock Prices Over Time", x = "Period", y = "Price ($)")
+```
+
+Interpretation: The plot of AAPL stock prices and the plot of HON stock prices show an overall upward tendency with some fluctuations. AAPL exhibits higher volatility compared to HON, which appears to be more consistent. Both stocks show no obvious seasonal trends.
+
+# 1.2 Exponential Smoothing
+
+```{r}
+# Define the exponential smoothing function
+exp_smoothing <- function(data, alpha) {
+  model <- HoltWinters(data, alpha = alpha, beta = FALSE, gamma = FALSE)
+  forecast <- forecast(model, h = 1)
+  
+  # Calculate MAPE 
+  mape <- mean(abs((data - forecast$fitted) / data), na.rm = TRUE) * 100
+  return(list(forecast = forecast, mape = mape))
+}
+# Apply exponential smoothing to cleaned AAPL data 
+aapl_results <- lapply(c(0.15, 0.35, 0.55, 0.75), function(alpha) exp_smoothing(aapl_data_clean, alpha))
+
+# Apply exponential smoothing to cleaned HON data 
+hon_results <- lapply(c(0.15, 0.35, 0.55, 0.75), function(alpha) exp_smoothing(hon_data_clean, alpha))
+
+# Display MAPE results for AAPL
+sapply(aapl_results, function(x) x$mape)
+
+# Display MAPE results for HON
+sapply(hon_results, function(x) x$mape)
+```
+
+Interpretation: The stock prices of AAPL and HON were subjected to exponential smoothing with α values of 0.15, 0.35, 0.55, and 0.75. In contrast to HON, which had MAPE values of 3.06, 2.35, 2.03, and 1.90, respectively, AAPL had MAPE values of 3.87, 2.47, 2.08, and 1.97. For both stocks, the most accurate predictions were obtained when α = 0.75. This variation is due to the fact that a larger α value assigns more weight to recent data, which is crucial for identifying both subtle trends in HON's stock price and quick changes in AAPL's stock price. The findings imply that current data is crucial for predicting both firms' stock values.
+
+-\> Best MAPE for AAPL: 1.969072
+
+-\> Best MAPE for HON: 1.895824
+
+# 1.3 Adjusted Exponential Smoothing
+
+```{r}
+# Define the adjusted exponential smoothing function 
+adj_exp_smoothing <- function(data, alpha, beta) {
+  model <- HoltWinters(data, alpha = alpha, beta = beta, gamma = FALSE)
+  forecast <- forecast(model, h = 1)
+  
+  # Calculate MAPE (handle division by zero and NA values)
+  mape <- mean(abs((data - forecast$fitted) / data), na.rm = TRUE) * 100
+  return(list(forecast = forecast, mape = mape))
+}
+# Apply adjusted exponential smoothing to cleaned AAPL data 
+aapl_adj_results <- lapply(c(0.15, 0.25, 0.45, 0.85), function(beta) adj_exp_smoothing(aapl_data_clean, 0.55, beta))
+
+# Apply adjusted exponential smoothing to cleaned HON data 
+hon_adj_results <- lapply(c(0.15, 0.25, 0.45, 0.85), function(beta) adj_exp_smoothing(hon_data_clean, 0.55, beta))
+
+# Display MAPE results for AAPL (adjusted smoothing)
+sapply(aapl_adj_results, function(x) x$mape)
+
+# Display MAPE results for HON (adjusted smoothing)
+sapply(hon_adj_results, function(x) x$mape)
+
+```
+
+Interpretation: The stock prices of AAPL and HON were subjected to adjusted exponential smoothing with α = 0.55 and β values of 0.15, 0.25, 0.45, and 0.85. In contrast to HON, which had MAPE values of 2.06, 2.08, 2.17, and 2.28 correspondingly, AAPL had MAPE values of 2.03, 2.05, 2.17, and 2.30. For both stocks, the most accurate predictions were obtained when β = 0.15. This is due to the fact that a smaller β value eliminates noise and prevents overfitting to short-term movements, both of which are critical for capturing the general trend in steady (HON) and high-volatility (AAPL) equities. The findings imply that prediction accuracy is increased by flattening the trend component.
+
+# Part 2: Long-term Forecasting
+
+# 2.1 3-Period Weighted Moving Averages
+
+```{r}
+# Load necessary libraries
+library(forecast)
+library(ggplot2)
+
+# Define the 3-period weighted moving average function
+weighted_moving_average <- function(data, weights) {
+  n <- length(data)
+  forecast <- rep(NA, n)  # Initialize with NA
+  weights <- weights / sum(weights)  # Normalize weights to sum to 1
+  
+  if (length(weights) != 3) {
+    stop("Weights vector must have exactly 3 elements.")
+  }
+  
+  for (i in 3:n) {
+    forecast[i] <- sum(data[(i-2):i] * weights)
+  }
+  return(forecast)
+}
+
+# Ensure data is a numeric vector
+aapl_data_clean <- as.numeric(aapl_data_clean)
+hon_data_clean <- as.numeric(hon_data_clean)
+
+# Define weights for the moving average
+weights <- c(0.2, 0.3, 0.5)  # Weights for two periods ago, one period ago, and most recent
+
+# Apply 3-period weighted moving average for AAPL and HON data (first 100 periods)
+aapl_wma <- weighted_moving_average(aapl_data_clean[1:100], weights)
+hon_wma <- weighted_moving_average(hon_data_clean[1:100], weights)
+
+# Define training period indices for trend forecasting
+train_period <- 101:252
+
+# Linear trend forecasting for AAPL (fit using periods 101-252)
+aapl_train_data <- data.frame(Period = train_period, Value = aapl_data_clean[train_period])
+aapl_trend <- lm(Value ~ Period, data = aapl_train_data)
+
+# Forecast periods 101-257
+forecast_period <- 101:257
+newdata_aapl <- data.frame(Period = forecast_period)
+aapl_trend_forecast <- predict(aapl_trend, newdata = newdata_aapl)
+
+# Linear trend forecasting for HON (fit using periods 101-252)
+hon_train_data <- data.frame(Period = train_period, Value = hon_data_clean[train_period])
+hon_trend <- lm(Value ~ Period, data = hon_train_data)
+
+# Forecast periods 101-257
+newdata_hon <- data.frame(Period = forecast_period)
+hon_trend_forecast <- predict(hon_trend, newdata = newdata_hon)
+
+# **Fix the Length Issue**
+# Ensure forecasts have exactly 257 elements
+aapl_forecasts <- c(aapl_wma, rep(NA, 100 - length(aapl_wma)), aapl_trend_forecast)
+hon_forecasts <- c(hon_wma, rep(NA, 100 - length(hon_wma)), hon_trend_forecast)
+
+# Extract forecasts for periods 253-257
+aapl_forecasts_253_257 <- setNames(aapl_forecasts[253:257], 253:257)
+hon_forecasts_253_257 <- setNames(hon_forecasts[253:257], 253:257)
+
+# Display forecasts
+cat("AAPL Forecasts for Periods 253-257:\n")
+print(aapl_forecasts_253_257)
+
+cat("HON Forecasts for Periods 253-257:\n")
+print(hon_forecasts_253_257)
+```
+
+AAPL Forecasts: Because the approach significantly overstated the real prices, the AAPL estimates were not particularly accurate. This is probably because AAPL's stock price is so volatile that it is difficult to forecast using a simple weighted moving average and linear trend.
+
+HON Forecasts: Additionally, the HON forecasts were not particularly accurate since the approach significantly underestimated the real costs. This conclusion implies that the increased trend in HON's stock price during this period may not have been well represented by the linear trend.
+
+# 2.2 MAPEs calculation and comparison.
+
+```{r}
+# Define the linear trend forecasting function
+linear_trend <- function(data, start_period) {
+  n <- length(data)
+  trend <- lm(data[start_period:n] ~ c(start_period:n))
+  forecast <- predict(trend, newdata = data.frame(c(start_period:n)))
+  return(forecast)
+}
+
+# Apply linear trend forecasting to AAPL data
+aapl_trend <- linear_trend(aapl_data_clean, 101)
+
+# Apply linear trend forecasting to HON data
+hon_trend <- linear_trend(hon_data_clean, 101)
+
+# Calculate MAPE for AAPL long-term forecast
+aapl_long_mape <- mean(abs((aapl_data_clean[101:length(aapl_data_clean)] - aapl_trend) / aapl_data_clean[101:length(aapl_data_clean)])) * 100
+
+# Calculate MAPE for HON long-term forecast
+hon_long_mape <- mean(abs((hon_data_clean[101:length(hon_data_clean)] - hon_trend) / hon_data_clean[101:length(hon_data_clean)])) * 100
+
+# Display MAPE results for long-term forecasts
+aapl_long_mape
+hon_long_mape
+
+```
+
+AAPL: The MAPE in Part 2.2 (4.778476) is much higher than the best MAPE for AAPL in Part 1 (1.969072). This finding suggests that the most accurate prediction for AAPL was produced using the exponential smoothing approach, which had an alpha of 0.75.
+
+HON: Likewise, the MAPE in Part 2.2 (3.052453) is higher than the best MAPE for HON in Part 1 (1.895824). This result implies that the most accurate prediction for HON was likewise produced using the exponential smoothing approach, which had an alpha of 0.75.
+
+# Part 3: Regression
+
+# 3.1 Simple Regression
+
+```{r}
+# Perform simple regression for AAPL
+aapl_regression <- lm(`AAPL (Apple Inc) / $` ~ Period, data = data_clean)
+aapl_regression_forecast <- predict(aapl_regression, newdata = data.frame(Period = 1:257))
+
+# Perform simple regression for HON
+hon_regression <- lm(`HON (Honeywell Inc)  /  $` ~ Period, data = data_clean)
+hon_regression_forecast <- predict(hon_regression, newdata = data.frame(Period = 1:257))
+
+# Calculate MAPE for AAPL regression forecast
+aapl_actual <- data_clean$`AAPL (Apple Inc) / $`[1:257]
+aapl_regression_mape <- mean(abs((aapl_actual - aapl_regression_forecast) / aapl_actual), na.rm = TRUE) * 100
+
+# Calculate MAPE for HON regression forecast
+hon_actual <- data_clean$`HON (Honeywell Inc)  /  $`[1:257]
+hon_regression_mape <- mean(abs((hon_actual - hon_regression_forecast) / hon_actual), na.rm = TRUE) * 100
+
+# Display MAPE results for regression forecasts
+aapl_regression_mape
+hon_regression_mape
+
+```
+
+# 3.2 Residual Analysis
+
+```{r}
+# Load necessary libraries
+library(stats) # For shapiro.test
+
+# 1. Independence of Residuals
+# Plot residuals vs fitted values for AAPL
+aapl_residuals <- residuals(aapl_regression)
+aapl_fitted <- fitted(aapl_regression)
+
+ggplot(data = data.frame(Fitted = aapl_fitted, Residuals = aapl_residuals), aes(x = Fitted, y = Residuals)) +
+  geom_point(color = "blue") +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "AAPL Residuals vs Fitted Values", x = "Fitted Values", y = "Residuals")
+
+# Plot residuals vs fitted values for HON
+hon_residuals <- residuals(hon_regression)
+hon_fitted <- fitted(hon_regression)
+
+ggplot(data = data.frame(Fitted = hon_fitted, Residuals = hon_residuals), aes(x = Fitted, y = Residuals)) +
+  geom_point(color = "red") +
+  geom_hline(yintercept = 0, color = "blue", linetype = "dashed") +
+  labs(title = "HON Residuals vs Fitted Values", x = "Fitted Values", y = "Residuals")
+
+# 2. Homoscedasticity (Constant Variance of Residuals)
+# Perform the Breusch-Pagan test for homoscedasticity
+ncvTest(aapl_regression)  # For AAPL
+ncvTest(hon_regression)   # For HON
+
+# 3. Normality of Residuals
+# Normal Q-Q Plot for AAPL
+qqPlot(aapl_residuals, main = "AAPL Normal Q-Q Plot", col = "blue")
+
+# Normal Q-Q Plot for HON
+qqPlot(hon_residuals, main = "HON Normal Q-Q Plot", col = "red")
+
+# Chi-squared Test for Normality (Shapiro-Wilk Test)
+shapiro.test(aapl_residuals)  # For AAPL
+shapiro.test(hon_residuals)   # For HON
+
+# Install the nortest package (if not already installed)
+install.packages("nortest")
+
+# Load the nortest package
+library(nortest)
+
+# Perform Chi-squared test for AAPL residuals
+aapl_chisq_test <- pearson.test(aapl_residuals)
+
+# Perform Chi-squared test for HON residuals
+hon_chisq_test <- pearson.test(hon_residuals)
+
+# Display the test results
+aapl_chisq_test
+hon_chisq_test
+
+```
+
+-   The residuals for HON and AAPL are independent.
+-   Homoscedasticity (constant variance) is present in the residuals for both AAPL and HON.
+-   The residuals are normally distributed by plotting a Normal probability plot of the residuals
+-   The residuals are not normally distributed by performing a Chi-squared test for Normality of the residuals
+
+# Portfolio Allocation
+
+```{r}
+# Portfolio allocation based on analysis
+P <- 40  # 40% allocated to AAPL
+Q <- 60  # 60% allocated to HON
+
+# Print the allocation
+cat("Portfolio Allocation:\n")
+cat("AAPL (Apple Inc.):", P, "%\n")
+cat("HON (Honeywell Inc.):", Q, "%\n")
+```
